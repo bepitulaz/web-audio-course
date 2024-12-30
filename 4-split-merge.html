@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - Channel Split & Merge</title>
+  </head>
+  <body>
+    <h1>Channel Splitter and Merger Demo</h1>
+    <button id="playButton">Play</button>
+    <div>
+      <label
+        >Left Channel Gain:
+        <input
+          type="range"
+          id="leftGain"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.5"
+      /></label>
+      <label
+        >Right Channel Delay:
+        <input
+          type="range"
+          id="rightDelay"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.3"
+      /></label>
+    </div>
+
+    <script>
+      /*
+        Audio Routing Diagram:
+
+        [AudioSource (Stereo)] 
+              |
+              v
+        [ChannelSplitter]
+              |
+        +------+------+
+        |             |
+        v             v
+    [Left Ch]    [Right Ch]
+        |             |
+        v             v
+    [GainNode]   [DelayNode]
+        |             |
+        v             v
+        +------+------+
+              |
+        [ChannelMerger]
+              |
+              v
+        [Destination]
+
+
+        Connection Details:
+        - Left Channel (0):  Source -> Splitter -> GainNode -> Merger(L) -> Destination
+        - Right Channel (1): Source -> Splitter -> DelayNode -> Merger(R) -> Destination
+    */
+
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+      let audioBuffer = null;
+      let audioSource = null;
+      let splitter = null;
+      let merger = null;
+      let leftGainNode = null;
+      let rightDelayNode = null;
+
+      async function initAudio() {
+        audioContext = new AudioContext();
+
+        // Create nodes
+        splitter = audioContext.createChannelSplitter(2);
+        merger = audioContext.createChannelMerger(2);
+        leftGainNode = audioContext.createGain();
+        rightDelayNode = audioContext.createDelay(1.0);
+
+        // Set initial values
+        leftGainNode.gain.value = 0.5;
+        rightDelayNode.delayTime.value = 0.3;
+
+        // Load stereo audio file
+        const response = await fetch("sample-cello.wav");
+        const arrayBuffer = await response.arrayBuffer();
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      }
+
+      function playAudio() {
+        if (audioSource) {
+          audioSource.stop();
+        }
+
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+
+        // Connect the routing:
+        // 1. Source to splitter
+        audioSource.connect(splitter);
+
+        // 2. Process left channel (0)
+        splitter.connect(leftGainNode, 0);
+        leftGainNode.connect(merger, 0, 0);
+
+        // 3. Process right channel (1)
+        splitter.connect(rightDelayNode, 1);
+        rightDelayNode.connect(merger, 0, 1);
+
+        // 4. Merger to destination
+        merger.connect(audioContext.destination);
+
+        audioSource.start();
+        document.getElementById("playButton").disabled = true;
+
+        audioSource.onended = () => {
+          document.getElementById("playButton").disabled = false;
+        };
+      }
+
+      // Initialize audio and add controls
+      initAudio().catch(console.error);
+
+      document
+        .getElementById("playButton")
+        .addEventListener("click", playAudio);
+
+      document.getElementById("leftGain").addEventListener("input", (e) => {
+        if (leftGainNode) leftGainNode.gain.value = e.target.value;
+      });
+
+      document.getElementById("rightDelay").addEventListener("input", (e) => {
+        if (rightDelayNode) rightDelayNode.delayTime.value = e.target.value;
+      });
+    </script>
+  </body>
+</html>
