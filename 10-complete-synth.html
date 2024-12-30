@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Complete Synthesizer</title>
+    <style>
+      .keyboard {
+        display: flex;
+        margin: 20px;
+      }
+      .key {
+        border: 1px solid #000;
+        width: 40px;
+        height: 120px;
+        background: white;
+        margin-right: -1px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .black {
+        background: black;
+        height: 80px;
+        width: 30px;
+        margin-left: -15px;
+        margin-right: -15px;
+        z-index: 2;
+      }
+      .white {
+        z-index: 1;
+      }
+      .key.active {
+        background: #ccc;
+      }
+      .black.active {
+        background: #333;
+      }
+      .control-group {
+        margin: 10px;
+        padding: 10px;
+        border: 1px solid #ccc;
+      }
+      canvas {
+        background: black;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="keyboard">
+      <div class="key white" data-note="C4" data-freq="261.63"></div>
+      <div class="key black" data-note="C#4" data-freq="277.18"></div>
+      <div class="key white" data-note="D4" data-freq="293.66"></div>
+      <div class="key black" data-note="D#4" data-freq="311.13"></div>
+      <div class="key white" data-note="E4" data-freq="329.63"></div>
+      <div class="key white" data-note="F4" data-freq="349.23"></div>
+      <div class="key black" data-note="F#4" data-freq="369.99"></div>
+      <div class="key white" data-note="G4" data-freq="392.00"></div>
+      <div class="key black" data-note="G#4" data-freq="415.30"></div>
+      <div class="key white" data-note="A4" data-freq="440.00"></div>
+      <div class="key black" data-note="A#4" data-freq="466.16"></div>
+      <div class="key white" data-note="B4" data-freq="493.88"></div>
+      <div class="key white" data-note="C5" data-freq="523.25"></div>
+    </div>
+
+    <div class="control-group">
+      <h3>Filter</h3>
+      <select id="filterType">
+        <option value="lowpass">Lowpass</option>
+        <option value="highpass">Highpass</option>
+        <option value="bandpass">Bandpass</option>
+      </select>
+      <br />
+      <label
+        >Cutoff:
+        <input type="range" id="filterFreq" min="20" max="20000" value="1000"
+      /></label>
+      <br />
+      <label
+        >Resonance: <input type="range" id="filterQ" min="0" max="20" value="1"
+      /></label>
+    </div>
+
+    <div class="control-group">
+      <h3>Distortion</h3>
+      <label
+        >Amount:
+        <input type="range" id="distortion" min="0" max="100" value="0"
+      /></label>
+    </div>
+
+    <div class="control-group">
+      <h3>Reverb</h3>
+      <label
+        >Mix:
+        <input
+          type="range"
+          id="reverbMix"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.3"
+      /></label>
+    </div>
+
+    <canvas id="scope" width="600" height="200"></canvas>
+
+    <script>
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const filter = audioCtx.createBiquadFilter();
+      const waveshaper = audioCtx.createWaveShaper();
+      const convolver = audioCtx.createConvolver();
+      const analyser = audioCtx.createAnalyser();
+      const dryGain = audioCtx.createGain();
+      const wetGain = audioCtx.createGain();
+      let oscillatorA = null;
+      let oscillatorB = null;
+      let isPlaying = false;
+
+      // Audio routing
+      filter.connect(waveshaper);
+      waveshaper.connect(dryGain);
+      waveshaper.connect(convolver);
+      convolver.connect(wetGain);
+      dryGain.connect(analyser);
+      wetGain.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      // Initial settings
+      dryGain.gain.value = 0.7;
+      wetGain.gain.value = 0.3;
+      filter.type = "lowpass";
+      filter.frequency.value = 1000;
+      filter.Q.value = 1;
+
+      // Keyboard mapping
+      const keyboardMapping = {
+        a: "C4",
+        w: "C#4",
+        s: "D4",
+        e: "D#4",
+        d: "E4",
+        f: "F4",
+        t: "F#4",
+        g: "G4",
+        y: "G#4",
+        h: "A4",
+        u: "A#4",
+        j: "B4",
+        k: "C5",
+      };
+
+      // Create distortion curve
+      function makeDistortionCurve(amount) {
+        const k = amount;
+        const n_samples = 44100;
+        const curve = new Float32Array(n_samples);
+        const deg = Math.PI / 180;
+
+        for (let i = 0; i < n_samples; ++i) {
+          const x = (i * 2) / n_samples - 1;
+          curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+        }
+        return curve;
+      }
+
+      // Load impulse response
+      async function loadImpulseResponse() {
+        const response = await fetch("ir-hall.wav");
+        const arrayBuffer = await response.arrayBuffer();
+        convolver.buffer = await audioCtx.decodeAudioData(arrayBuffer);
+      }
+      loadImpulseResponse().catch(console.error);
+
+      // Analyzer setup
+      analyser.fftSize = 2048;
+      const dataArray = new Float32Array(analyser.frequencyBinCount);
+      const canvas = document.getElementById("scope");
+      const canvasCtx = canvas.getContext("2d");
+
+      function playNote(frequency) {
+        if (oscillatorA) stopOscillators();
+
+        oscillatorA = audioCtx.createOscillator();
+        oscillatorB = audioCtx.createOscillator();
+
+        oscillatorA.frequency.value = frequency;
+        oscillatorB.frequency.value = frequency * 1.01; // Slight detuning
+
+        oscillatorA.connect(filter);
+        oscillatorB.connect(filter);
+
+        oscillatorA.start();
+        oscillatorB.start();
+        isPlaying = true;
+      }
+
+      function stopOscillators() {
+        if (oscillatorA) {
+          oscillatorA.stop();
+          oscillatorB.stop();
+          oscillatorA = null;
+          oscillatorB = null;
+          isPlaying = false;
+        }
+      }
+
+      function draw() {
+        requestAnimationFrame(draw);
+        analyser.getFloatTimeDomainData(dataArray);
+
+        canvasCtx.fillStyle = "rgb(0, 0, 0)";
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.lineWidth = 2;
+        canvasCtx.strokeStyle = "rgb(0, 255, 0)";
+        canvasCtx.beginPath();
+
+        const sliceWidth = canvas.width / analyser.frequencyBinCount;
+        let x = 0;
+
+        for (let i = 0; i < analyser.frequencyBinCount; i++) {
+          const v = dataArray[i] * 90.0;
+          const y = canvas.height / 2 + v;
+
+          if (i === 0) {
+            canvasCtx.moveTo(x, y);
+          } else {
+            canvasCtx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+
+        canvasCtx.stroke();
+      }
+
+      // Event Listeners
+      document.querySelectorAll(".key").forEach((key) => {
+        key.addEventListener("mousedown", () => {
+          if (audioCtx.state === 'suspended') {
+              audioCtx.resume();
+          }
+          const freq = parseFloat(key.dataset.freq);
+          playNote(freq);
+          key.classList.add("active");
+        });
+
+        key.addEventListener("mouseup", () => {
+          stopOscillators();
+          key.classList.remove("active");
+        });
+
+        key.addEventListener("mouseleave", () => {
+          if (isPlaying) {
+            stopOscillators();
+            key.classList.remove("active");
+          }
+        });
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (!e.repeat && keyboardMapping[e.key]) {
+          const note = keyboardMapping[e.key];
+          const key = document.querySelector(`[data-note="${note}"]`);
+          const freq = parseFloat(key.dataset.freq);
+          playNote(freq);
+          key.classList.add("active");
+        }
+      });
+
+      document.addEventListener("keyup", (e) => {
+        if (keyboardMapping[e.key]) {
+          const note = keyboardMapping[e.key];
+          const key = document.querySelector(`[data-note="${note}"]`);
+          stopOscillators();
+          key.classList.remove("active");
+        }
+      });
+
+      document.getElementById("filterType").addEventListener("change", (e) => {
+        filter.type = e.target.value;
+      });
+
+      document.getElementById("filterFreq").addEventListener("input", (e) => {
+        filter.frequency.value = e.target.value;
+      });
+
+      document.getElementById("filterQ").addEventListener("input", (e) => {
+        filter.Q.value = e.target.value;
+      });
+
+      document.getElementById("distortion").addEventListener("input", (e) => {
+        waveshaper.curve = makeDistortionCurve(e.target.value);
+      });
+
+      document.getElementById("reverbMix").addEventListener("input", (e) => {
+        const mix = parseFloat(e.target.value);
+        wetGain.gain.value = mix;
+        dryGain.gain.value = 1 - mix;
+      });
+
+      // Start visualization
+      draw();
+    </script>
+  </body>
+</html>

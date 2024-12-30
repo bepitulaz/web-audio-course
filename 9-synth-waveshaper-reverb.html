@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Synth with Filter, Distortion and Reverb</title>
+    <style>
+      .control-group {
+        margin: 10px;
+        padding: 10px;
+        border: 1px solid #ccc;
+      }
+      canvas {
+        background: black;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="control-group">
+      <button id="startBtn">Start/Stop</button>
+    </div>
+
+    <div class="control-group">
+      <h3>Oscillators</h3>
+      <label
+        >Osc A: <input type="range" id="freqA" min="20" max="2000" value="440"
+      /></label>
+      <br />
+      <label
+        >Osc B: <input type="range" id="freqB" min="20" max="2000" value="554"
+      /></label>
+    </div>
+
+    <div class="control-group">
+      <h3>Filter</h3>
+      <select id="filterType">
+        <option value="lowpass">Lowpass</option>
+        <option value="highpass">Highpass</option>
+        <option value="bandpass">Bandpass</option>
+      </select>
+      <br />
+      <label
+        >Cutoff:
+        <input type="range" id="filterFreq" min="20" max="20000" value="1000"
+      /></label>
+      <br />
+      <label
+        >Resonance: <input type="range" id="filterQ" min="0" max="20" value="1"
+      /></label>
+    </div>
+
+    <div class="control-group">
+      <h3>Distortion</h3>
+      <label
+        >Amount:
+        <input type="range" id="distortion" min="0" max="100" value="0"
+      /></label>
+    </div>
+
+    <div class="control-group">
+      <h3>Reverb</h3>
+      <label
+        >Mix:
+        <input
+          type="range"
+          id="reverbMix"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.3"
+      /></label>
+    </div>
+
+    <canvas id="scope" width="600" height="200"></canvas>
+
+    <script>
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const filter = audioCtx.createBiquadFilter();
+      const waveshaper = audioCtx.createWaveShaper();
+      const convolver = audioCtx.createConvolver();
+      const analyser = audioCtx.createAnalyser();
+      const dryGain = audioCtx.createGain();
+      const wetGain = audioCtx.createGain();
+      let oscillatorA = null;
+      let oscillatorB = null;
+      let isPlaying = false;
+
+      // Setup routing
+      filter.connect(waveshaper);
+      waveshaper.connect(dryGain);
+      waveshaper.connect(convolver);
+      convolver.connect(wetGain);
+      dryGain.connect(analyser);
+      wetGain.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      // Initial settings
+      dryGain.gain.value = 0.7;
+      wetGain.gain.value = 0.3;
+
+      // Create distortion curve function
+      function makeDistortionCurve(amount) {
+        const k = amount;
+        const n_samples = 44100;
+        const curve = new Float32Array(n_samples);
+        const deg = Math.PI / 180;
+
+        for (let i = 0; i < n_samples; ++i) {
+          const x = (i * 2) / n_samples - 1;
+          curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+        }
+        return curve;
+      }
+
+      // Load impulse response
+      async function loadImpulseResponse() {
+        const response = await fetch("ir-hall.wav");
+        const arrayBuffer = await response.arrayBuffer();
+        convolver.buffer = await audioCtx.decodeAudioData(arrayBuffer);
+      }
+      loadImpulseResponse().catch(console.error);
+
+      // Setup analyser
+      analyser.fftSize = 2048;
+      const dataArray = new Float32Array(analyser.frequencyBinCount);
+
+      // Setup canvas
+      const canvas = document.getElementById("scope");
+      const canvasCtx = canvas.getContext("2d");
+
+      function startOscillators() {
+        oscillatorA = audioCtx.createOscillator();
+        oscillatorB = audioCtx.createOscillator();
+
+        oscillatorA.frequency.value = document.getElementById("freqA").value;
+        oscillatorB.frequency.value = document.getElementById("freqB").value;
+
+        oscillatorA.connect(filter);
+        oscillatorB.connect(filter);
+
+        oscillatorA.start();
+        oscillatorB.start();
+      }
+
+      function stopOscillators() {
+        oscillatorA.stop();
+        oscillatorB.stop();
+        oscillatorA = null;
+        oscillatorB = null;
+      }
+
+      function draw() {
+        requestAnimationFrame(draw);
+        analyser.getFloatTimeDomainData(dataArray);
+
+        canvasCtx.fillStyle = "rgb(0, 0, 0)";
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.lineWidth = 2;
+        canvasCtx.strokeStyle = "rgb(0, 255, 0)";
+        canvasCtx.beginPath();
+
+        const sliceWidth = canvas.width / analyser.frequencyBinCount;
+        let x = 0;
+
+        for (let i = 0; i < analyser.frequencyBinCount; i++) {
+          const v = dataArray[i] * 90.0;
+          const y = canvas.height / 2 + v;
+
+          if (i === 0) {
+            canvasCtx.moveTo(x, y);
+          } else {
+            canvasCtx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+
+        canvasCtx.stroke();
+      }
+
+      // Event handlers
+      document.getElementById("startBtn").addEventListener("click", () => {
+        if (!isPlaying) {
+          startOscillators();
+          isPlaying = true;
+        } else {
+          stopOscillators();
+          isPlaying = false;
+        }
+      });
+
+      document.getElementById("freqA").addEventListener("input", (e) => {
+        if (oscillatorA) oscillatorA.frequency.value = e.target.value;
+      });
+
+      document.getElementById("freqB").addEventListener("input", (e) => {
+        if (oscillatorB) oscillatorB.frequency.value = e.target.value;
+      });
+
+      document.getElementById("filterType").addEventListener("change", (e) => {
+        filter.type = e.target.value;
+      });
+
+      document.getElementById("filterFreq").addEventListener("input", (e) => {
+        filter.frequency.value = e.target.value;
+      });
+
+      document.getElementById("filterQ").addEventListener("input", (e) => {
+        filter.Q.value = e.target.value;
+      });
+
+      document.getElementById("distortion").addEventListener("input", (e) => {
+        waveshaper.curve = makeDistortionCurve(e.target.value);
+      });
+
+      document.getElementById("reverbMix").addEventListener("input", (e) => {
+        const mix = parseFloat(e.target.value);
+        wetGain.gain.value = mix;
+        dryGain.gain.value = 1 - mix;
+      });
+
+      // Start visualization
+      draw();
+    </script>
+  </body>
+</html>

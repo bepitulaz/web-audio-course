@@ -101,7 +101,7 @@
           isPlaying = false;
         } else {
           oscillator = audioContext.createOscillator();
-          oscillator.type = "sine"; // sine, square, sawtooth, triangle
+          oscillator.type = "triangle"; // sine, square, sawtooth, triangle
           oscillator.frequency.value =
             document.getElementById("freqControl").value;
           oscillator.connect(gainNode);

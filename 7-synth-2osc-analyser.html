@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Two Oscillators with Analyser</title>
+    <style>
+      canvas {
+        background: black;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <button id="startBtn">Start/Stop</button>
+      <br />
+      <label
+        >Osc A: <input type="range" id="freqA" min="20" max="2000" value="440"
+      /></label>
+      <br />
+      <label
+        >Osc B: <input type="range" id="freqB" min="20" max="2000" value="554"
+      /></label>
+    </div>
+    <canvas id="scope" width="600" height="200"></canvas>
+
+    <script>
+      // Audio routing diagram:
+      // [Osc A] ----\
+      //             +---> [Analyser] --> [Destination]
+      // [Osc B] ----/
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioCtx.createAnalyser();
+      let oscillatorA = null;
+      let oscillatorB = null;
+      let isPlaying = false;
+
+      // Setup analyser
+      analyser.fftSize = 2048;
+      analyser.connect(audioCtx.destination);
+
+      // Setup canvas
+      const canvas = document.getElementById("scope");
+      const canvasCtx = canvas.getContext("2d");
+      const dataArray = new Float32Array(analyser.frequencyBinCount);
+
+      function startOscillators() {
+        oscillatorA = audioCtx.createOscillator();
+        oscillatorB = audioCtx.createOscillator();
+
+        oscillatorA.frequency.value = document.getElementById("freqA").value;
+        oscillatorB.frequency.value = document.getElementById("freqB").value;
+
+        oscillatorA.connect(analyser);
+        oscillatorB.connect(analyser);
+
+        oscillatorA.start();
+        oscillatorB.start();
+      }
+
+      function stopOscillators() {
+        oscillatorA.stop();
+        oscillatorB.stop();
+        oscillatorA = null;
+        oscillatorB = null;
+      }
+
+      function draw() {
+        requestAnimationFrame(draw);
+        analyser.getFloatTimeDomainData(dataArray);
+
+        canvasCtx.fillStyle = "rgb(0, 0, 0)";
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.lineWidth = 2;
+        canvasCtx.strokeStyle = "rgb(0, 255, 0)";
+        canvasCtx.beginPath();
+
+        const sliceWidth = canvas.width / analyser.frequencyBinCount;
+        let x = 0;
+
+        for (let i = 0; i < analyser.frequencyBinCount; i++) {
+          const v = dataArray[i] * 90.0;
+          const y = canvas.height / 2 + v;
+
+          if (i === 0) {
+            canvasCtx.moveTo(x, y);
+          } else {
+            canvasCtx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+
+        canvasCtx.stroke();
+      }
+
+      // Event handlers
+      document.getElementById("startBtn").addEventListener("click", () => {
+        if (!isPlaying) {
+          startOscillators();
+          isPlaying = true;
+        } else {
+          stopOscillators();
+          isPlaying = false;
+        }
+      });
+
+      document.getElementById("freqA").addEventListener("input", (e) => {
+        if (oscillatorA) oscillatorA.frequency.value = e.target.value;
+      });
+
+      document.getElementById("freqB").addEventListener("input", (e) => {
+        if (oscillatorB) oscillatorB.frequency.value = e.target.value;
+      });
+
+      // Start visualization
+      draw();
+    </script>
+  </body>
+</html>
