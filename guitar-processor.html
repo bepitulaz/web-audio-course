@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Guitar Effects Processor</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        text-align: center;
+      }
+      .effect-controls {
+        display: flex;
+        justify-content: space-between;
+        margin: 20px 0;
+      }
+      .effect-controls div {
+        flex: 1;
+        margin: 0 10px;
+      }
+      canvas {
+        width: 100%;
+        height: 150px;
+        background: #f0f0f0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Guitar Effects Processor</h1>
+
+    <div class="effect-controls">
+      <div>
+        <label>Distortion</label>
+        <input
+          type="range"
+          id="distortionControl"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </div>
+      <div>
+        <label>Delay</label>
+        <input
+          type="range"
+          id="delayControl"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </div>
+      <div>
+        <label>Reverb</label>
+        <input
+          type="range"
+          id="reverbControl"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+      </div>
+    </div>
+
+    <canvas id="frequencyVisualization"></canvas>
+    <button id="startProcessing">Start Processing</button>
+
+    <script>
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
+      const canvas = document.getElementById("frequencyVisualization");
+      const canvasCtx = canvas.getContext("2d");
+
+      // UI Elements
+      const distortionControl = document.getElementById("distortionControl");
+      const delayControl = document.getElementById("delayControl");
+      const reverbControl = document.getElementById("reverbControl");
+      const startButton = document.getElementById("startProcessing");
+
+      // Audio Nodes
+      let inputNode,
+        analyser,
+        distortionNode,
+        delayNode,
+        reverbNode,
+        outputNode;
+
+      // Frequency Visualization Function
+      function drawFrequencyData() {
+        requestAnimationFrame(drawFrequencyData);
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        canvasCtx.fillStyle = "rgb(240, 240, 240)";
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / bufferLength) * 2.5;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          const barHeight = dataArray[i] / 2;
+
+          canvasCtx.fillStyle = `rgb(${barHeight + 100}, 50, 50)`;
+          canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+          x += barWidth + 1;
+        }
+      }
+
+      // Create Convolver (Reverb) Impulse Response
+      function createReverb(audioContext) {
+        const convolver = audioContext.createConvolver();
+        const bufferSize = audioContext.sampleRate * 1;
+        const buffer = audioContext.createBuffer(
+          2,
+          bufferSize,
+          audioContext.sampleRate
+        );
+        const left = buffer.getChannelData(0);
+        const right = buffer.getChannelData(1);
+
+        for (let i = 0; i < bufferSize; i++) {
+          left[i] = Math.random() * 2 - 1;
+          right[i] = Math.random() * 2 - 1;
+        }
+
+        convolver.buffer = buffer;
+        return convolver;
+      }
+
+      // Create Distortion Curve
+      function makeDistortionCurve(amount) {
+        const samples = 44100;
+        const curve = new Float32Array(samples);
+        const deg = Math.PI / 180;
+
+        for (let i = 0; i < samples; i++) {
+          const x = (i * 2) / samples - 1;
+          // Increased distortion intensity
+          curve[i] =
+            ((10 + amount * 100) * x * 20 * deg) /
+            (Math.PI + amount * Math.abs(x));
+        }
+        return curve;
+      }
+
+      // Setup Audio Processing Chain
+      async function setupAudioProcessing() {
+        try {
+          // Get audio input from USB interface (guitar)
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              autoGainControl: false,
+              noiseSuppression: false,
+              latency: 0,
+            },
+          });
+
+          inputNode = audioContext.createMediaStreamSource(stream);
+          analyser = audioContext.createAnalyser();
+          distortionNode = audioContext.createWaveShaper();
+          distortionNode.oversample = "4x"; // Can be 'none', '2x', or '4x'
+          distortionNode.curve = makeDistortionCurve(1); // Start with some distortion
+          delayNode = audioContext.createDelay();
+          reverbNode = createReverb(audioContext);
+          outputNode = audioContext.createGain();
+
+          const inputGain = audioContext.createGain();
+          inputGain.gain.value = 1; // Increase input gain
+
+          // Connect nodes
+          inputNode
+            .connect(inputGain)
+            .connect(distortionNode)
+            .connect(delayNode)
+            .connect(reverbNode)
+            .connect(outputNode)
+            .connect(analyser)
+            .connect(audioContext.destination);
+
+          // Modify distortion control to have more dramatic effect
+          distortionControl.addEventListener("input", (e) => {
+            const amount = parseFloat(e.target.value);
+            distortionNode.curve = makeDistortionCurve(amount);
+            inputGain.gain.setValueAtTime(
+              1 + amount * 10,
+              audioContext.currentTime
+            );
+          });
+
+          delayControl.addEventListener("input", (e) => {
+            delayNode.delayTime.setValueAtTime(
+              parseFloat(e.target.value),
+              audioContext.currentTime
+            );
+          });
+
+          reverbControl.addEventListener("input", (e) => {
+            outputNode.gain.setValueAtTime(
+              parseFloat(e.target.value),
+              audioContext.currentTime
+            );
+          });
+
+          // Start Visualization
+          analyser.fftSize = 256;
+          drawFrequencyData();
+
+          startButton.textContent = "Processing Active";
+          startButton.disabled = true;
+        } catch (err) {
+          console.error("Error accessing audio interface:", err);
+          alert("Please allow microphone/audio interface access");
+        }
+      }
+
+      // Initialize
+      startButton.addEventListener("click", setupAudioProcessing);
+    </script>
+  </body>
+</html>
