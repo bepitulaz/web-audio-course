@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - Live Input</title>
+    <style>
+      button {
+        padding: 10px 20px;
+        margin: 20px;
+      }
+      .active {
+        background-color: #ff4444;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Live Audio Input</h1>
+    <button id="startButton">Start Microphone</button>
+    <button id="stopButton" disabled>Stop</button>
+    <div id="statusMessage"></div>
+
+    <script>
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+      let mediaStream = null;
+      let mediaStreamSource = null;
+
+      async function startAudio() {
+        try {
+          if (!audioContext) {
+            audioContext = new AudioContext();
+          }
+
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          
+          console.log(
+            "Available audio inputs:",
+            devices.map((device) => ({
+              id: device.deviceId,
+              label: device.label,
+              kind: device.kind,
+            }))
+          );
+
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              autoGainControl: false,
+              noiseSuppression: false,
+            },
+          });
+
+          console.log("stream", stream);
+
+          mediaStream = stream;
+          mediaStreamSource = audioContext.createMediaStreamSource(stream);
+          mediaStreamSource.connect(audioContext.destination);
+
+          document.getElementById("startButton").disabled = true;
+          document.getElementById("stopButton").disabled = false;
+          document.getElementById("startButton").classList.add("active");
+          document.getElementById("statusMessage").textContent =
+            "Microphone is active";
+        } catch (error) {
+          console.error("Error accessing microphone:", error);
+          document.getElementById("statusMessage").textContent =
+            "Error accessing microphone. Please ensure permissions are granted.";
+        }
+      }
+
+      function stopAudio() {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          mediaStreamSource.disconnect();
+          mediaStream = null;
+          mediaStreamSource = null;
+
+          document.getElementById("startButton").disabled = false;
+          document.getElementById("stopButton").disabled = true;
+          document.getElementById("startButton").classList.remove("active");
+          document.getElementById("statusMessage").textContent =
+            "Microphone stopped";
+        }
+      }
+
+      document
+        .getElementById("startButton")
+        .addEventListener("click", startAudio);
+      document
+        .getElementById("stopButton")
+        .addEventListener("click", stopAudio);
+    </script>
+  </body>
+</html>

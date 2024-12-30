@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - Audio Player</title>
+  </head>
+  <body>
+    <h1>Simple Audio Player</h1>
+    <button id="loadButton">Load Audio</button>
+    <button id="playButton" disabled>Play</button>
+    <button id="stopButton" disabled>Stop</button>
+
+    <script>
+      // Check for AudioContext support 
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      
+			let audioContext = null;
+      let audioBuffer = null;
+      let audioSource = null;
+
+      async function loadAudio() {
+        try {
+          if (!audioContext) {
+            audioContext = new AudioContext();
+          }
+
+          // Fetch the audio file and store it in an AudioBuffer
+          const response = await fetch("sample-cello.wav");
+          const arrayBuffer = await response.arrayBuffer();
+          audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          document.getElementById("playButton").disabled = false;
+          document.getElementById("stopButton").disabled = false;
+          console.log("Audio loaded successfully");
+        } catch (error) {
+          console.error("Error loading audio:", error);
+        }
+      }
+
+      function playAudio() {
+        if (audioBuffer) {
+					// Create an AudioNode as the inputs from the buffer
+          audioSource = audioContext.createBufferSource();
+          audioSource.buffer = audioBuffer;
+
+					// Connect the source to the output (speaker)
+          audioSource.connect(audioContext.destination);
+          
+					audioSource.start();
+        }
+      }
+
+      function stopAudio() {
+        if (audioSource) {
+          audioSource.stop();
+          audioSource = null;
+        }
+      }
+
+      document
+        .getElementById("loadButton")
+        .addEventListener("click", loadAudio);
+      document
+        .getElementById("playButton")
+        .addEventListener("click", playAudio);
+      document
+        .getElementById("stopButton")
+        .addEventListener("click", stopAudio);
+    </script>
+  </body>
+</html>
