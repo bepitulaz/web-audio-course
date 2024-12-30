@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Basic Synthesizer with Oscilloscope</title>
+    <style>
+      canvas {
+        border: 1px solid #333;
+        background: #000;
+      }
+      .controls {
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Basic Synthesizer</h1>
+    <div class="controls">
+      <button id="startButton">Start/Stop</button>
+      <label
+        >Frequency:
+        <input type="range" id="freqControl" min="20" max="2000" value="440"
+      /></label>
+      <label
+        >Volume:
+        <input
+          type="range"
+          id="volumeControl"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.5"
+      /></label>
+    </div>
+    <canvas id="oscilloscope" width="600" height="200"></canvas>
+
+    <script>
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+      let oscillator = null;
+      let analyser = null;
+      let gainNode = null;
+      let isPlaying = false;
+
+      // Canvas setup
+      const canvas = document.getElementById("oscilloscope");
+      const canvasCtx = canvas.getContext("2d");
+
+      function initAudio() {
+        audioContext = new AudioContext();
+        analyser = audioContext.createAnalyser();
+        gainNode = audioContext.createGain();
+
+        // Configure analyser
+        analyser.fftSize = 2048;
+        // Number of data points to capture
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Float32Array(bufferLength);
+
+        // Connect nodes
+        gainNode.connect(analyser);
+        analyser.connect(audioContext.destination);
+        gainNode.gain.value = 0.5;
+
+        function draw() {
+          requestAnimationFrame(draw);
+          analyser.getFloatTimeDomainData(dataArray);
+
+          canvasCtx.fillStyle = "rgb(0, 0, 0)";
+          canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+          canvasCtx.lineWidth = 2;
+          canvasCtx.strokeStyle = "rgb(0, 255, 0)";
+          canvasCtx.beginPath();
+
+          const sliceWidth = (canvas.width * 1.0) / bufferLength;
+          let x = 0;
+
+          for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] * 90.0;
+            const y = canvas.height / 2 + v;
+
+            if (i === 0) {
+              canvasCtx.moveTo(x, y);
+            } else {
+              canvasCtx.lineTo(x, y);
+            }
+            x += sliceWidth;
+          }
+
+          canvasCtx.lineTo(canvas.width, canvas.height / 2);
+          canvasCtx.stroke();
+        }
+        draw();
+      }
+
+      function toggleOscillator() {
+        if (isPlaying) {
+          oscillator.stop();
+          oscillator = null;
+          isPlaying = false;
+        } else {
+          oscillator = audioContext.createOscillator();
+          oscillator.type = "sine"; // sine, square, sawtooth, triangle
+          oscillator.frequency.value =
+            document.getElementById("freqControl").value;
+          oscillator.connect(gainNode);
+          oscillator.start();
+          isPlaying = true;
+        }
+      }
+
+      // Initialize audio
+      initAudio();
+
+      // Event listeners
+      document
+        .getElementById("startButton")
+        .addEventListener("click", toggleOscillator);
+
+      document.getElementById("freqControl").addEventListener("input", (e) => {
+        if (oscillator) {
+          oscillator.frequency.value = e.target.value;
+        }
+      });
+
+      document
+        .getElementById("volumeControl")
+        .addEventListener("input", (e) => {
+          // gainNode.gain.value = e.target.value;
+          // change the gain value without by using setValueAtTime
+          gainNode.gain.setValueAtTime(e.target.value, audioContext.currentTime);
+        });
+    </script>
+  </body>
+</html>
