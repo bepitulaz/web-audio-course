@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - Basic Effects</title>
+  </head>
+  <body>
+    <button id="playButton">Play</button>
+    <div>
+      <label
+        >Volume:
+        <input
+          type="range"
+          id="gainSlider"
+          min="0"
+          max="1"
+          step="0.1"
+          value="0.5"
+      /></label>
+      <label
+        >Pan:
+        <input
+          type="range"
+          id="panSlider"
+          min="-1"
+          max="1"
+          step="0.1"
+          value="0"
+      /></label>
+      <label
+        >Delay Time:
+        <input
+          type="range"
+          id="delaySlider"
+          min="0"
+          max="2"
+          step="0.1"
+          value="0.5"
+      /></label>
+    </div>
+
+    <script>
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+      let audioBuffer = null;
+      let audioSource = null;
+      let gainNode = null;
+      let pannerNode = null;
+      let delayNode = null;
+      let feedbackGain = null;
+
+      async function initAudio() {
+        audioContext = new AudioContext();
+
+        // Create nodes
+        gainNode = audioContext.createGain();
+        gainNode.gain.value = 0.5;
+
+        pannerNode = audioContext.createStereoPanner();
+        pannerNode.pan.value = 0;
+
+        delayNode = audioContext.createDelay(2.0);
+        delayNode.delayTime.value = 0.5;
+
+        // Create feedback loop for delay
+        feedbackGain = audioContext.createGain();
+        feedbackGain.gain.value = 0.4; // Feedback amount
+
+        // Connect delay feedback loop
+        delayNode.connect(feedbackGain);
+        feedbackGain.connect(delayNode);
+
+        // Load audio file
+        const response = await fetch("sample-cello.wav");
+        const arrayBuffer = await response.arrayBuffer();
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      }
+
+      function playAudio() {
+        if (audioSource) {
+          audioSource.stop();
+        }
+
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+
+        // Connect nodes: source -> gain -> panner -> delay -> destination
+        audioSource.connect(gainNode);
+        gainNode.connect(pannerNode);
+        pannerNode.connect(delayNode);
+        delayNode.connect(audioContext.destination);
+
+        // Also connect direct path for dry signal
+        pannerNode.connect(audioContext.destination);
+
+        audioSource.start();
+        document.getElementById("playButton").disabled = true;
+
+        audioSource.onended = () => {
+          document.getElementById("playButton").disabled = false;
+        };
+      }
+
+      // Initialize audio and add controls
+      initAudio().catch(console.error);
+
+      document
+        .getElementById("playButton")
+        .addEventListener("click", playAudio);
+
+      document.getElementById("gainSlider").addEventListener("input", (e) => {
+        if (gainNode) gainNode.gain.value = e.target.value;
+      });
+
+      document.getElementById("panSlider").addEventListener("input", (e) => {
+        if (pannerNode) pannerNode.pan.value = e.target.value;
+      });
+
+      document.getElementById("delaySlider").addEventListener("input", (e) => {
+        if (delayNode) delayNode.delayTime.value = e.target.value;
+      });
+    </script>
+  </body>
+</html>
