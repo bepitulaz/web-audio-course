@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - AudioContext</title>
+  </head>
+  <body>
+    <h1>Web Audio API</h1>
+    <button id="startButton">Start Audio Context</button>
+
+    <script>
+      let audioContext = null;
+
+      document.getElementById("startButton").addEventListener("click", () => {
+        try {
+          if (!audioContext) {
+            audioContext = new AudioContext();
+            console.log("AudioContext created successfully!");
+            console.log("Sample rate:", audioContext.sampleRate);
+            console.log("Current state:", audioContext.state);
+          }
+        } catch (error) {
+          console.error("Error creating AudioContext:", error);
+        }
+      });
+    </script>
+  </body>
+</html>
