@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Audio API - 3D Panner and Reverb</title>
+    <style>
+      .controls {
+        margin: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+      }
+      label {
+        display: block;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>3D Audio Position and Reverb Demo</h1>
+    <button id="playButton">Play Sound</button>
+
+    <div class="controls">
+      <h3>Source Position</h3>
+      <label
+        >X Position:
+        <input
+          type="range"
+          id="positionX"
+          min="-10"
+          max="10"
+          value="0"
+          step="0.1"
+      /></label>
+      <label
+        >Y Position:
+        <input
+          type="range"
+          id="positionY"
+          min="-10"
+          max="10"
+          value="0"
+          step="0.1"
+      /></label>
+      <label
+        >Z Position:
+        <input
+          type="range"
+          id="positionZ"
+          min="-10"
+          max="10"
+          value="-5"
+          step="0.1"
+      /></label>
+
+      <h3>Reverb Mix</h3>
+      <label
+        >Wet/Dry:
+        <input
+          type="range"
+          id="reverbMix"
+          min="0"
+          max="1"
+          value="0.3"
+          step="0.1"
+      /></label>
+    </div>
+
+    <script>
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+      let audioBuffer = null;
+      let irBuffer = null;
+      let audioSource = null;
+      let panner = null;
+      let convolver = null;
+      let dryGain = null;
+      let wetGain = null;
+
+      async function initAudio() {
+        audioContext = new AudioContext();
+
+        // Create nodes
+        panner = audioContext.createPanner();
+        convolver = audioContext.createConvolver();
+        dryGain = audioContext.createGain();
+        wetGain = audioContext.createGain();
+
+        // Configure panner
+        panner.panningModel = "HRTF";
+        panner.distanceModel = "inverse";
+        panner.refDistance = 1;
+        panner.maxDistance = 10000;
+        panner.rolloffFactor = 1;
+        panner.coneInnerAngle = 360;
+        panner.coneOuterAngle = 0;
+        panner.coneOuterGain = 0;
+
+        // Set initial positions
+        panner.setPosition(0, 0, -5);
+        audioContext.listener.setPosition(0, 0, 0);
+        audioContext.listener.setOrientation(0, 0, -1, 0, 1, 0);
+
+        // Set initial gains
+        dryGain.gain.value = 0.7;
+        wetGain.gain.value = 0.3;
+
+        // Load audio file
+        const [audioResponse, irResponse] = await Promise.all([
+          fetch("sample-guitar.wav"),
+          fetch("ir-hall.wav"),
+        ]);
+
+        const [audioArrayBuffer, irArrayBuffer] = await Promise.all([
+          audioResponse.arrayBuffer(),
+          irResponse.arrayBuffer(),
+        ]);
+
+        [audioBuffer, irBuffer] = await Promise.all([
+          audioContext.decodeAudioData(audioArrayBuffer),
+          audioContext.decodeAudioData(irArrayBuffer),
+        ]);
+
+        convolver.buffer = irBuffer;
+      }
+
+      function playAudio() {
+        if (audioSource) {
+          audioSource.stop();
+        }
+
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+
+        // Connect nodes:
+        // Source -> Panner -> [Dry Mix] -> Destination
+        //                  -> [Wet Mix] -> Convolver -> Destination
+        audioSource.connect(panner);
+        panner.connect(dryGain);
+        panner.connect(convolver);
+        convolver.connect(wetGain);
+        dryGain.connect(audioContext.destination);
+        wetGain.connect(audioContext.destination);
+
+        audioSource.start();
+        document.getElementById("playButton").disabled = true;
+
+        audioSource.onended = () => {
+          document.getElementById("playButton").disabled = false;
+        };
+      }
+
+      // Initialize audio and add controls
+      initAudio().catch(console.error);
+
+      document
+        .getElementById("playButton")
+        .addEventListener("click", playAudio);
+
+      // Position controls
+      document.getElementById("positionX").addEventListener("input", (e) => {
+        const x = parseFloat(e.target.value);
+        if (panner)
+          panner.setPosition(x, panner.positionY.value, panner.positionZ.value);
+      });
+
+      document.getElementById("positionY").addEventListener("input", (e) => {
+        const y = parseFloat(e.target.value);
+        if (panner)
+          panner.setPosition(panner.positionX.value, y, panner.positionZ.value);
+      });
+
+      document.getElementById("positionZ").addEventListener("input", (e) => {
+        const z = parseFloat(e.target.value);
+        if (panner)
+          panner.setPosition(panner.positionX.value, panner.positionY.value, z);
+      });
+
+      document.getElementById("reverbMix").addEventListener("input", (e) => {
+        const mix = parseFloat(e.target.value);
+        if (wetGain && dryGain) {
+          wetGain.gain.value = mix;
+          dryGain.gain.value = 1 - mix;
+        }
+      });
+    </script>
+  </body>
+</html>
